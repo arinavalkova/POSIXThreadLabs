@@ -3,8 +3,6 @@
 #include <unistd.h>
 #include <pthread.h>
 
-#define ERROR_CREATE_THREAD 1
-
 void *printLinesInNewThread(void *parameters)
 {
     while (1)
@@ -24,7 +22,7 @@ int main(int argc, char **argv)
     if (createThreadStatus != 0)
     {
         printf("Main thread: can't create thread, status=%d", createThreadStatus);
-        exit(ERROR_CREATE_THREAD);
+        exit(EXIT_FAILURE);
     }
 
     sleep(2);
@@ -34,14 +32,14 @@ int main(int argc, char **argv)
     if(cancelThreadStatus != 0)
     {
         printf("Main thread: can't cancel thread, status=%d", cancelThreadStatus);
-        exit(ERROR_CREATE_THREAD);
+        exit(EXIT_FAILURE);
     }
 
     int joiningThreadStatus = pthread_join(thread, NULL);
     if(joiningThreadStatus != 0)
     {
         printf("Main thread: can't join thread, status=%d", joiningThreadStatus);
-        exit(ERROR_CREATE_THREAD);
+        exit(EXIT_FAILURE);
     }
 
     printf("After canceling...\n");

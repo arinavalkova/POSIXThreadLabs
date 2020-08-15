@@ -2,16 +2,15 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-#define ERROR_CREATE_THREAD 1
 #define COUNT_OF_THREADS 4
 #define MAX_COUNT_OF_LINES 5
 
 const char* linesForPrintInThreads[][MAX_COUNT_OF_LINES] =
         {
-            {"line1 in thread1...", "line2 in thread2...", "line3 in thread3...", "line4 in thread4...", NULL},
-            {"line1 in thread2...", "line2 in thread2...", NULL},
-            {"line1 in thread3...", NULL},
-            {"line1 in thread4...", "line2 in thread4...", "line3 in thread4...", NULL}
+                {"line1 in thread1...", "line2 in thread2...", "line3 in thread3...", "line4 in thread4...", NULL},
+                {"line1 in thread2...", "line2 in thread2...", NULL},
+                {"line1 in thread3...", NULL},
+                {"line1 in thread4...", "line2 in thread4...", "line3 in thread4...", NULL}
         };
 
 void* printLinesInNewThread(void* parameters)
@@ -38,7 +37,7 @@ int main(int argc, char** argv)
         if(createThreadStatus != 0)
         {
             printf("Main thread: can't create %d thread, status=%d", i, createThreadStatus);
-            exit(ERROR_CREATE_THREAD);
+            exit(EXIT_FAILURE);
         }
     }
 

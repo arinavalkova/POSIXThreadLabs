@@ -2,8 +2,6 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-#define ERROR_CREATE_THREAD 1
-
 void printTenLines(char *line)
 {
     for(int i = 0; i < 10; i++)
@@ -27,7 +25,7 @@ int main(int argc, char** argv)
     if(createThreadStatus != 0)
     {
         printf("Main thread: can't create thread, status=%d", createThreadStatus);
-        exit(ERROR_CREATE_THREAD);
+        exit(EXIT_FAILURE);
     }
 
     printTenLines("I am a main thread...");

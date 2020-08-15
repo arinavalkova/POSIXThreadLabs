@@ -1,2 +1,2 @@
 all:
-        gcc lab1.c -o lab1.exe
+        gcc lab2.c -o lab2.exe

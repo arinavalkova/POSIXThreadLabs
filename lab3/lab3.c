@@ -42,8 +42,6 @@ int main(int argc, char** argv)
         }
     }
 
-    printf("Main thread...\n");
-
     pthread_exit(NULL);
     exit(EXIT_SUCCESS);
 }

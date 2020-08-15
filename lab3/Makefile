@@ -1,2 +1,2 @@
 all:
-        gcc lab3.c -o lab3.exe
+        gcc -pthread lab3.c -o lab3.exe

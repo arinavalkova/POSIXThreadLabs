@@ -4,21 +4,19 @@
 
 #define ERROR_CREATE_THREAD 1
 
-void printTenLines(char *line);
-
-void* printLinesInNewThread(void* parameters)
-{
-    printTenLines("I am a new thread...");
-
-    return EXIT_SUCCESS;
-}
-
 void printTenLines(char *line)
 {
     for(int i = 0; i < 10; i++)
     {
         printf("%s\n", line);
     }
+}
+
+void* printLinesInNewThread(void* parameters)
+{
+    printTenLines("I am a new thread...");
+
+    return EXIT_SUCCESS;
 }
 
 int main(int argc, char** argv)

@@ -62,6 +62,10 @@ int main(int argc, char** argv)
 
     pi = pi * 4.0;
     printf("pi done - %.15g \n", pi);
+    
+    free(thread);
+    free(partOfPi);
+    free(rank);
 
     return (EXIT_SUCCESS);
 }

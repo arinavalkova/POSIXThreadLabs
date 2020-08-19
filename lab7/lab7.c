@@ -9,9 +9,9 @@ double* partOfPi;
 
 void* calculatePartOfPi(void* parameters)
 {
-    int rank = *(int*) parameters;
+    int rank = *(int*) parameters, i = rank;
 
-    for (int i = rank; i < num_steps; i += countOfThreads)
+    for (; i < num_steps; i += countOfThreads)
     {
         partOfPi[rank] += 1.0 / (i * 4.0 + 1.0);
         partOfPi[rank] -= 1.0 / (i * 4.0 + 3.0);
@@ -25,6 +25,7 @@ int main(int argc, char** argv)
     double pi = 0;
     pthread_t* thread;
     int* rank;
+    int i = 0;
 
     if(argc < 2)
     {
@@ -48,13 +49,14 @@ int main(int argc, char** argv)
         exit(EXIT_FAILURE);
     }
 
-    for(int i = 0; i < countOfThreads; i++)
+    for(; i < countOfThreads; i++)
     {
         rank[i] = i;
         pthread_create(&thread[i], NULL, calculatePartOfPi, &rank[i]);
     }
 
-    for(int i = 0; i < countOfThreads; i++)
+    i = 0;
+    for(; i < countOfThreads; i++)
     {
         pthread_join(thread[i], NULL);
         pi += partOfPi[i];

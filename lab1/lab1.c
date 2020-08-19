@@ -4,7 +4,8 @@
 
 void printTenLines(char *line)
 {
-    for(int i = 0; i < 10; i++)
+    int i = 0;
+    for(; i < 10; i++)
     {
         printf("%s\n", line);
     }
@@ -20,8 +21,8 @@ void* printLinesInNewThread(void* parameters)
 int main(int argc, char** argv)
 {
     pthread_t thread;
-
     int createThreadStatus = pthread_create(&thread, NULL, printLinesInNewThread, NULL);
+    
     if(createThreadStatus != 0)
     {
         printf("Main thread: can't create thread, status=%d", createThreadStatus);

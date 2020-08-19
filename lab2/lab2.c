@@ -20,15 +20,16 @@ void* printLinesInNewThread(void* parameters)
 int main(int argc, char** argv)
 {
     pthread_t thread;
+    int createThreadStatus, joiningThreadStatus;
 
-    int createThreadStatus = pthread_create(&thread, NULL, printLinesInNewThread, NULL);
+    createThreadStatus = pthread_create(&thread, NULL, printLinesInNewThread, NULL);
     if(createThreadStatus != 0)
     {
         printf("Main thread: can't create thread, status=%d", createThreadStatus);
         exit(EXIT_FAILURE);
     }
 
-    int joiningThreadStatus = pthread_join(thread, NULL);
+    joiningThreadStatus = pthread_join(thread, NULL);
     if(joiningThreadStatus != 0)
     {
         printf("Main thread: can't join thread, status=%d", joiningThreadStatus);

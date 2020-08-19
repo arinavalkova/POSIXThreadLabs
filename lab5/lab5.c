@@ -25,8 +25,9 @@ void* printLinesInNewThread(void *parameters)
 int main(int argc, char **argv)
 {
     pthread_t thread;
+    int createThreadStatus, cancelThreadStatus, joiningThreadStatus;
 
-    int createThreadStatus = pthread_create(&thread, NULL, printLinesInNewThread, NULL);
+    createThreadStatus = pthread_create(&thread, NULL, printLinesInNewThread, NULL);
     if (createThreadStatus != 0)
     {
         printf("Main thread: can't create thread, status=%d", createThreadStatus);
@@ -36,14 +37,14 @@ int main(int argc, char **argv)
     sleep(2);
 
     printf("Before canceling...\n");
-    int cancelThreadStatus = pthread_cancel(thread);
+    cancelThreadStatus = pthread_cancel(thread);
     if(cancelThreadStatus != 0)
     {
         printf("Main thread: can't cancel thread, status=%d", cancelThreadStatus);
         exit(EXIT_FAILURE);
     }
 
-    int joiningThreadStatus = pthread_join(thread, NULL);
+    joiningThreadStatus = pthread_join(thread, NULL);
     if(joiningThreadStatus != 0)
     {
         printf("Main thread: can't join thread, status=%d", joiningThreadStatus);

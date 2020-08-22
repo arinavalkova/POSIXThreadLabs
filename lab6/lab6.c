@@ -148,9 +148,12 @@ void *copyFile(void *parameters)
     {
         printf("Error: Can't open %s\n", allPathToGotOutPath);
 
+        if(close(inFile) == -1)
+        {
+            printf("Error: Can't close file %s\n", allPathToGotInPath);
+        }
         free(allPathToGotInPath);
         free(allPathToGotOutPath);
-        close(inFile);
 
         return (void *) EXIT_FAILURE;
     }
@@ -164,10 +167,18 @@ void *copyFile(void *parameters)
             printf("Error: Read error %s\n", allPathToGotInPath);
 
             free(buf);
+
+            if(close(inFile) == -1)
+            {
+                printf("Error: Can't close file %s\n", allPathToGotInPath);
+            }
+            if(close(outFile) == -1)
+            {
+                printf("Error: Can't close file %s\n", allPathToGotOutPath);
+            }
+
             free(allPathToGotInPath);
             free(allPathToGotOutPath);
-            close(inFile);
-            close(outFile);
 
             return (void *) EXIT_FAILURE;
         }
@@ -178,10 +189,18 @@ void *copyFile(void *parameters)
             printf("Error: Write error %s\n", allPathToGotOutPath);
 
             free(buf);
+
+            if(close(inFile) == -1)
+            {
+                printf("Error: Can't close file %s\n", allPathToGotInPath);
+            }
+            if(close(outFile) == -1)
+            {
+                printf("Error: Can't close file %s\n", allPathToGotOutPath);
+            }
+
             free(allPathToGotInPath);
             free(allPathToGotOutPath);
-            close(inFile);
-            close(outFile);
 
             return (void *) EXIT_FAILURE;
         }
@@ -190,12 +209,19 @@ void *copyFile(void *parameters)
 
     printf("Copied %s ...\n", allPathToGotInPath);
 
-    close(inFile);
-    close(outFile);
-
-    free(buf);
     free(allPathToGotInPath);
     free(allPathToGotOutPath);
+
+    if(close(inFile) == -1)
+    {
+        printf("Error: Can't close file %s\n", allPathToGotInPath);
+    }
+    if(close(outFile) == -1)
+    {
+        printf("Error: Can't close file %s\n", allPathToGotOutPath);
+    }
+    free(buf);
+
     return EXIT_SUCCESS;
 }
 
@@ -289,7 +315,10 @@ void* copyDirectory(void* parameters)
 
     if(makeOutPathDirectory(currentOutPath) == -1)
     {
-        closedir(openedDirectory);
+        if(closedir(openedDirectory) == -1)
+        {
+            printf("Error: Can't close directory %s\n", currentInPath);
+        }
         free(currentInPath);
         free(currentOutPath);
         free(parameters);
@@ -328,7 +357,11 @@ void* copyDirectory(void* parameters)
 
     printf("Copied %s ...\n", currentInPath);
 
-    closedir(openedDirectory);
+    if(closedir(openedDirectory) == -1)
+    {
+        printf("Error: Can't close directory %s\n", currentInPath);
+    }
+
     free(currentInPath);
     free(currentOutPath);
     free(parameters);

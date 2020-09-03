@@ -28,10 +28,10 @@ void* printLinesInNewThread(void* parameters)
 int main(int argc, char** argv)
 {
     pthread_t thread[COUNT_OF_THREADS];
-    int createThreadStatus, i = 0;
+    int createThreadStatus, i;
 
 
-    for(; i < COUNT_OF_THREADS; i++)
+    for(i = 0; i < COUNT_OF_THREADS; i++)
     {
         createThreadStatus = pthread_create(&thread[i], NULL, printLinesInNewThread, linesForPrintInThreads[i]);
         if(createThreadStatus != 0)
@@ -42,5 +42,4 @@ int main(int argc, char** argv)
     }
 
     pthread_exit(NULL);
-    exit(EXIT_SUCCESS);
 }

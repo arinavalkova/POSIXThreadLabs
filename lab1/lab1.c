@@ -32,5 +32,4 @@ int main(int argc, char** argv)
     printTenLines("I am a main thread...");
 
     pthread_exit(NULL);
-    exit(EXIT_SUCCESS);
 }

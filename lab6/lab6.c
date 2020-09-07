@@ -9,6 +9,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#define EMPTY_LINE ""
+
 char *inPath, *outPath;
 
 int nonIntrRead(int fd, void* buf, size_t count)
@@ -227,7 +229,7 @@ void *copyFile(void *parameters)
 
 int makeOutPathDirectory(char *path)
 {
-    int makeDirStatus = mkdir(path, ACCESSPERMS);
+    int makeDirStatus = mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
 
     if (makeDirStatus == -1 && errno == EACCES)
     {
@@ -373,7 +375,6 @@ int main(int argc, char **argv)
 {
     pthread_t thread;
     struct stat buff;
-    char* emptyLine = malloc(1);
 
     if (argc < 3)
     {
@@ -392,7 +393,7 @@ int main(int argc, char **argv)
 
     if(isInPathIsDirectory(buff))
     {
-        thread = newThreadCreate(copyDirectory, emptyLine);
+        thread = newThreadCreate(copyDirectory, strdup(EMPTY_LINE));
     }
     else
     {

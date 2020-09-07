@@ -227,9 +227,17 @@ void *copyFile(void *parameters)
     return EXIT_SUCCESS;
 }
 
-int makeOutPathDirectory(char *path)
+int makeOutPathDirectory(char *path, char *inPath)
 {
-    int makeDirStatus = mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    struct stat buff;
+
+    if(stat(inPath, &buff) == -1)
+    {
+        printf("Error: Can't get information from path %s\n", inPath);
+        return -1;
+    }
+    
+    int makeDirStatus = mkdir(path, buff.st_mode);
 
     if (makeDirStatus == -1 && errno == EACCES)
     {
@@ -315,7 +323,7 @@ void* copyDirectory(void* parameters)
         return (void *) EXIT_FAILURE;
     }
 
-    if(makeOutPathDirectory(currentOutPath) == -1)
+    if(makeOutPathDirectory(currentOutPath, currentInPath) == -1)
     {
         if(closedir(openedDirectory) == -1)
         {

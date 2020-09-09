@@ -14,8 +14,6 @@ void printTenLines(char *line)
 void* printLinesInNewThread(void* parameters)
 {
     printTenLines("I am a new thread...");
-
-    return EXIT_SUCCESS;
 }
 
 int main(int argc, char** argv)

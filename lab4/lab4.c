@@ -46,5 +46,4 @@ int main(int argc, char **argv)
     printf("After canceling...\n");
 
     pthread_exit(NULL);
-    exit(EXIT_SUCCESS);
 }

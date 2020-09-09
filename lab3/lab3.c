@@ -21,8 +21,6 @@ void* printLinesInNewThread(void* parameters)
     {
         printf("%s\n", *arrayOfLines);
     }
-
-    return EXIT_SUCCESS;
 }
 
 int main(int argc, char** argv)

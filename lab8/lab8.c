@@ -7,7 +7,7 @@
 
 int countOfThreads;
 int stopCalculating = 0;
-int maxGlobalIteration = 0;
+long long maxGlobalIteration = 0;
 double* partOfPi;
 
 pthread_mutex_t mutex;
@@ -15,11 +15,12 @@ pthread_mutex_t mutex;
 void* calculatePartOfPi(void* parameters)
 {
     int rank = *(int*) parameters;
-    int currentGlobalIteration = 0;
+    long long currentGlobalIteration = 0;
 
+    long long i;
     while(1)
     {
-        int i = rank + currentGlobalIteration * num_global_iteration;
+        i = rank + currentGlobalIteration * num_global_iteration;
         for (; i < (currentGlobalIteration + 1) * num_global_iteration; i += countOfThreads)
         {
             partOfPi[rank] += 1.0 / (i * 4.0 + 1.0);
@@ -41,14 +42,12 @@ void* calculatePartOfPi(void* parameters)
 
         pthread_mutex_unlock(&mutex);
     }
-
-    return EXIT_SUCCESS;
 }
 
 void stopCalculateParts(int parameters)
 {
-    printf("Caught interrupt signal... \n");
-    printf("Starting preparing pi...\n");
+    fputs("Caught interrupt signal... \n", stderr);
+    fputs("Starting preparing pi... \n", stderr);
 
     stopCalculating = 1;
 }
@@ -101,7 +100,11 @@ int main(int argc, char** argv)
 
     for(i = 0; i < countOfThreads; i++)
     {
-        pthread_join(thread[i], NULL);
+        if(pthread_join(thread[i], NULL) != 0)
+        {
+            printf("Can't join thread\n");
+            pthread_exit(NULL);
+        }
         pi += partOfPi[i];
     }
 
@@ -116,4 +119,3 @@ int main(int argc, char** argv)
 
     return (EXIT_SUCCESS);
 }
-

@@ -35,7 +35,7 @@ int main(int argc, char** argv)
         if(createThreadStatus != 0)
         {
             printf("Main thread: can't create %d thread, status=%d", i, createThreadStatus);
-            exit(EXIT_FAILURE);
+            pthread_exit(NULL);
         }
     }
 

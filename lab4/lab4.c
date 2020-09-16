@@ -10,8 +10,6 @@ void *printLinesInNewThread(void *parameters)
         pthread_testcancel();
         printf("I am a new thread...\n");
     }
-
-    return EXIT_SUCCESS;
 }
 
 int main(int argc, char **argv)

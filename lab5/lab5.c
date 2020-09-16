@@ -19,7 +19,6 @@ void* printLinesInNewThread(void *parameters)
     }
 
     pthread_cleanup_pop(0);
-    return EXIT_SUCCESS;
 }
 
 int main(int argc, char **argv)

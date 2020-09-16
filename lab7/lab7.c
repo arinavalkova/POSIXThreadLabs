@@ -16,8 +16,6 @@ void* calculatePartOfPi(void* parameters)
         partOfPi[rank] += 1.0 / (i * 4.0 + 1.0);
         partOfPi[rank] -= 1.0 / (i * 4.0 + 3.0);
     }
-
-    return EXIT_SUCCESS;
 }
 
 int main(int argc, char** argv)

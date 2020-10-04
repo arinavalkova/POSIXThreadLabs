@@ -36,6 +36,8 @@ int main(int argc, char **argv) {
                exit(EXIT_FAILURE);
            }
        }
+        sem_close_err_proc(sem1);
+        sem_close_err_proc(sem2);
     } else {
         for(int i = 0; i < LINE_COUNT; i++) {
             if(sem_wait_err_proc(sem1) == -1) {
@@ -46,13 +48,13 @@ int main(int argc, char **argv) {
                 exit(EXIT_FAILURE);
             }
         }
+
+        sem_close_err_proc(sem1);
+        sem_close_err_proc(sem2);
+
+        sem_unlink_err_proc(sem1_name);
+        sem_unlink_err_proc(sem2_name);
     }
-
-    sem_close_err_proc(sem1);
-    sem_close_err_proc(sem2);
-
-    sem_unlink_err_proc(sem1_name);
-    sem_unlink_err_proc(sem2_name);
     exit(EXIT_SUCCESS);
 }
 
@@ -109,7 +111,7 @@ void sem_close_err_proc(sem_t *sem) {
     }
 }
 
-void sem_unlink_err_proc(const char name[]) {
+void sem_unlink_err_proc(const char *name) {
     if (sem_unlink(name) == -1) {
         int err = errno;
         fprintf(stderr, "sem_unlink() failed. errno:%d\n", err);

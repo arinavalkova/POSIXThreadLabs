@@ -1,18 +1,45 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
 #include <pthread.h>
+
+#define pthread_mutex_lock_err_proc(x) {\
+    int errorCode;\
+    while ((errorCode = pthread_mutex_lock(x)) != 0) {\
+        perror(errorCode);\
+        if (errorCode != EAGAIN) {\
+            pthread_exit((void*)-1);\
+        }\
+    }\
+}
+#define pthread_mutex_unlock_err_proc(x) {\
+    int errorCode;\
+    while ((errorCode = pthread_mutex_unlock(x)) != 0) {\
+        perror(errorCode);\
+        if (errorCode != EAGAIN) {\
+            pthread_exit((void*)-1);\
+        }\
+    }\
+}
 
 pthread_cond_t cond;
 pthread_mutex_t mutex;
 
 void printTenLines(char *line) {
-    pthread_mutex_lock(&mutex);
-    int i = 0;
+    pthread_mutex_lock_err_proc(&mutex);
+    int i = 0, err;
     for (; i < 10; i++) {
-        pthread_cond_signal(&cond);
+        if (pthread_cond_signal(&cond) == -1) {
+            fprintf(stderr, "pthread_cond_signal() failed. errno:%d\n", err);
+            pthread_exit(NULL);
+        }
         printf("%s\n", line);
-        pthread_cond_wait(&cond, &mutex);
+        if (pthread_cond_wait(&cond, &mutex) == -1) {
+            fprintf(stderr, "pthread_cond_wait() failed. errno:%d\n", err);
+            pthread_exit(NULL);
+        }
     }
-    pthread_mutex_unlock(&mutex);
+    pthread_mutex_unlock_err_proc(&mutex);
 }
 
 void *printLinesInNewThread(void *parameters) {
@@ -21,27 +48,54 @@ void *printLinesInNewThread(void *parameters) {
 
 int main(int argc, char **argv) {
     pthread_t thread;
-    pthread_mutex_init(&mutex, NULL);
-    pthread_cond_init(&cond, NULL);
+    int mutex_stat = pthread_mutex_init(&mutex, NULL);
+    if (mutex_stat != 0) {
+        int err = errno;
+        fprintf(stderr, "pthread_mutex_init() failed. errno:%d\n", err);
+        fprintf(stderr, "Error : incorrect program execution \n");
+        exit(EXIT_FAILURE);
+    }
 
-    int createThreadStatus = pthread_create(&thread, NULL, printLinesInNewThread, NULL);
+    int cond_stat = pthread_cond_init(&cond, NULL);
+    if (cond_stat != 0) {
+        int err = errno;
+        fprintf(stderr, "pthread_cond_init() failed. errno:%d\n", err);
+        fprintf(stderr, "Error : incorrect program execution \n");
+        exit(EXIT_FAILURE);
+    }
 
-    if (createThreadStatus != 0) {
-        printf("Main thread: can't create thread, status=%d", createThreadStatus);
+    int err = errno, errorCode;
+    do {
+        errorCode = pthread_create(&thread, NULL, printLinesInNewThread, NULL);
+        if (errorCode == -1) {
+            fprintf(stderr, "Error: pthread_create() for %s failed.  errno:%d\n", err);
+        }
+    } while (errorCode == -1 && err == EAGAIN);
+
+    pthread_mutex_lock_err_proc(&mutex);
+    int i = 0;
+    for (; i < 10; i++) {
+        if (pthread_cond_signal(&cond) == -1) {
+            fprintf(stderr, "pthread_cond_signal() failed. errno:%d\n", err);
+            pthread_exit(NULL);
+        }
+        printf("%s\n", "I am a main thread...");
+        if (pthread_cond_wait(&cond, &mutex) == -1) {
+            fprintf(stderr, "pthread_cond_wait() failed. errno:%d\n", err);
+            pthread_exit(NULL);
+        }
+    }
+    pthread_mutex_unlock_err_proc(&mutex);
+    if (pthread_cond_signal(&cond) == -1) {
+        fprintf(stderr, "pthread_cond_signal() failed. errno:%d\n", err);
         pthread_exit(NULL);
     }
 
-    pthread_mutex_lock(&mutex);
-    int i = 0;
-    for (; i < 10; i++) {
-        pthread_cond_signal(&cond);
-        printf("%s\n", "I am a main thread...");
-        pthread_cond_wait(&cond, &mutex);
+    if (pthread_cond_destroy(&cond) == -1) {
+        fprintf(stderr, "pthread_cond_destroy() failed. errno:%d\n", err);
     }
-    pthread_mutex_unlock(&mutex);
-    pthread_cond_signal(&cond);
-
-    pthread_cond_destroy(&cond);
-    pthread_mutex_destroy(&mutex);
+    if (pthread_mutex_destroy(&mutex) == -1) {
+        fprintf(stderr, "pthread_mutex_destroy() failed. errno:%d\n", err);
+    }
     pthread_exit(NULL);
 }

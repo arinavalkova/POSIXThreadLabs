@@ -13,7 +13,7 @@ sem_t sem_a, sem_b, sem_c, sem_ab;
 pthread_t thread_a, thread_b, thread_c, thread_ab;
 
 void sems_init() {
-    sem_init(&sem_a, 0, 0);
+    	sem_init(&sem_a, 0, 0);
 	sem_init(&sem_b, 0, 0);
 	sem_init(&sem_c, 0, 0);
 	sem_init(&sem_ab, 0, 0);
@@ -22,8 +22,8 @@ void sems_init() {
 void pthread_create_err_proc(pthread_t *thread,
         const pthread_attr_t *attr,
         void *(*start_routine) (void *), void *arg) {
-    int ret;
-    do {
+    	int ret;
+    	do {
 	    ret = pthread_create (thread, attr, start_routine, arg);
 	    if (ret != 0)
 	        fprintf(stderr, "Error: pthread_create() for %s failed. errno: %d", ret);

@@ -8,14 +8,35 @@
 #include "myMsgQueue.h"
 
 #define END "Threads already joined\n"
+#define MSG_LEN 20
+#define CONS_ANSW 40
 
 void* prod_func(void* args) {
     auto* myMsgQue = (MyMsgQueue*)(args);
-    return 0;
+    char msg_buffer[MSG_LEN];
+    int msg_counter = 0;
+    while (true) {
+        msg_counter++;
+        sprintf(msg_buffer, "MSG %d: from prod - %d", msg_counter, pthread_self());
+        if (myMsgQue->put(msg_buffer) == 0) {
+            return 0;
+        }
+    }
 }
 
 void* cons_func(void* args) {
     auto* myMsgQue = (MyMsgQueue*)(args);
+    char msg_buffer[MSG_LEN];
+    char cons_answ[CONS_ANSW];
+    //test_cancel()
+    while (true) {
+        int msg_len;
+        if((msg_len = myMsgQue->get(msg_buffer, MSG_LEN)) == 0) {
+            return 0;
+        } else {
+            fprintf(stdin, "Gotten by %d cons: %s\n", pthread_self(), msg_buffer);
+        }
+    }
     return 0;
 }
 
@@ -60,7 +81,7 @@ int main(int argc, char** argv) {
         exit(-1);
     }
 
-    MyMsgQueue myMsgQueue(5);
+    MyMsgQueue myMsgQueue;
 
     for (int i = 0; i < prod_count; i++) {
         pthread_create_err_proc(prod_pthread + i, NULL, prod_func, &myMsgQueue);
@@ -75,6 +96,7 @@ int main(int argc, char** argv) {
     for (int i = 0; i < cons_count; i++) {
         pthread_join_err_proc(*(cons_pthread + i), NULL);
     }
+    //sigint
     write(1, END, strlen(END));
     return 0;
 }

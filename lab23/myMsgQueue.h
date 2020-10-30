@@ -1,12 +1,18 @@
 #include <iostream>
+#include <semaphore.h>
+#include "queue.h"
 
 class MyMsgQueue {
-    int value;
+    struct queue *next, *prev;
+    sem_t head_sem, tail_sem, queue_sem;
+    bool destroying;
 public:
-    explicit MyMsgQueue(int value);
+    explicit MyMsgQueue();
 
     virtual ~MyMsgQueue();
 
-    int getValue() const;
+    int put(char* msg);
+
+    int get(char *buffer, int buffer_len);
 };
 

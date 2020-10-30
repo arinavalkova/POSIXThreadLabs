@@ -1,16 +1,19 @@
 #include <unistd.h>
 #include <cstring>
 #include "myMsgQueue.h"
-#include "queue.h"
 
 #define DESTROY "MyMsgQueue resources was already destroyed\n"
 
-MyMsgQueue::MyMsgQueue(int value) : value(value) {}
+MyMsgQueue::MyMsgQueue() {}
 
 MyMsgQueue::~MyMsgQueue() {
     write(1, DESTROY, strlen(DESTROY));
 }
 
-int MyMsgQueue::getValue() const {
-    return value;
+int MyMsgQueue::put(char* msg) {
+    return 0;
+}
+
+int MyMsgQueue::get(char *buffer, int buffer_len) {
+    return 0;
 }

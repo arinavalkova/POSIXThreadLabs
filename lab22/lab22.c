@@ -13,7 +13,7 @@ sem_t sem_a, sem_b, sem_c, sem_ab;
 pthread_t thread_a, thread_b, thread_c, thread_ab;
 
 void sems_init() {
-    	sem_init(&sem_a, 0, 0);
+        sem_init(&sem_a, 0, 0);
 	sem_init(&sem_b, 0, 0);
 	sem_init(&sem_c, 0, 0);
 	sem_init(&sem_ab, 0, 0);
@@ -22,18 +22,18 @@ void sems_init() {
 void pthread_create_err_proc(pthread_t *thread,
         const pthread_attr_t *attr,
         void *(*start_routine) (void *), void *arg) {
-    	int ret;
-    	do {
+    int ret;
+    do {
 	    ret = pthread_create (thread, attr, start_routine, arg);
 	    if (ret != 0)
-	        fprintf(stderr, "Error: pthread_create() for %s failed. errno: %d", ret);
+	        fprintf(stderr, "Error: pthread_create() for %s failed.\n", strerror(ret));
 	} while (ret != 0 && ret == EAGAIN);
 }
 
 int sem_wait_err_proc(sem_t *sem) {
     int ret = sem_wait(sem);
     if (ret != 0) {
-        fprintf(stderr, "sem_wait() failed. errno:%d\n", ret);
+        fprintf(stderr, "sem_wait() failed for %s\n", strerror(ret));
         fprintf(stderr, "Error : incorrect program execution \n");
     }
     return ret;
@@ -42,7 +42,7 @@ int sem_wait_err_proc(sem_t *sem) {
 int sem_post_err_proc(sem_t *sem) {
     int ret = sem_post(sem);
     if (ret != 0) {
-        fprintf(stderr, "sem_post() failed. errno:%d\n", ret);
+        fprintf(stderr, "sem_post() failed for %s\n", strerror(ret));
         fprintf(stderr, "Error : incorrect program execution \n");
     }
     return ret;
@@ -51,7 +51,7 @@ int sem_post_err_proc(sem_t *sem) {
 void pthread_join_err_proc(pthread_t thread, void **retval) {
     int ret = pthread_join(thread, retval);
     if (ret != 0) {
-        fprintf(stderr, "Error: pthread_join() failed with %s. errno:%d", ret);
+        fprintf(stderr, "Error: pthread_join() failed with %s", strerror(ret));
     }
 }
 

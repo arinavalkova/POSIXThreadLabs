@@ -15,10 +15,14 @@
 #define EMPTY ""
 #define DEFAULT_PORT "80"
 #define BUF_SIZE 4096
+#define CYCLICAL_BUF_INITIALIZER {0, 1, 0, 0, 0, 0}
+#define MAX_ALLOWED_LINES_ON_SCREEN 25
 
-char buf[BUF_SIZE];
-int buf_full = 0, socket_end = 0, curr_pos_in_buf = 0, simbols_in_buf,
-        buf_empty = 1, lines_on_screen = 0, max_allowed_lines_on_screen = 25;
+struct cyclical_buf {
+    int full, empty, sock_end,
+        lines_on_screen, up, down;
+    char buf[BUF_SIZE];
+};
 
 int
 url_parse_err_proc(char *url_line, char **port, char **host, char **path) {
@@ -77,60 +81,44 @@ connect_to_server(char *host, char *port) {
 }
 
 int
-update_select(int sock, fd_set *read_fs, fd_set *write_fs) {
+update_select(int sock, fd_set *read_fs, fd_set *write_fs, struct cyclical_buf *buffer) {
     FD_ZERO(read_fs);
     FD_ZERO(write_fs);
-    if (!buf_empty && lines_on_screen < max_allowed_lines_on_screen) {
+    if (!buffer->empty && buffer->lines_on_screen < MAX_ALLOWED_LINES_ON_SCREEN) {
         FD_SET(1, write_fs);
     }
-    if (!buf_full && !socket_end) {
+    if (!buffer->full && !buffer->sock_end) {
         FD_SET(sock, read_fs);
     }
-    if (lines_on_screen >= max_allowed_lines_on_screen) {
+    if (buffer->lines_on_screen >= MAX_ALLOWED_LINES_ON_SCREEN) {
         FD_SET(0, read_fs);
     }
     return select(sock + 1, read_fs, write_fs, NULL, NULL);
 }
 
 int
-listen_stdin(fd_set *read_fs) {
-    if (lines_on_screen >= max_allowed_lines_on_screen && FD_ISSET(0, read_fs)) {
-//        char* click;
-//        read(0, click, 1);//handle read
-//        lines_on_screen = 0;
+listen_stdin(fd_set *read_fs, struct cyclical_buf *buffer) {
+    if (buffer->lines_on_screen >= MAX_ALLOWED_LINES_ON_SCREEN && FD_ISSET(0, read_fs)) {
+        char* click;
+        read(0, click, 1);//handle read
+        buffer->lines_on_screen = 0;
     }
     return 0;
 }
 
 int
-listen_stdout(fd_set *write_fs) {
+listen_stdout(fd_set *write_fs, struct cyclical_buf *buffer) {
     int ret;
-    if (!buf_empty && lines_on_screen < max_allowed_lines_on_screen && FD_ISSET(1, write_fs)) {
-//        char *new_line_checker = buf + curr_pos_in_buf,
-//             *end_buf =  buf + sizeof(buf);
-//        int line_size = 0;
-//        for (; new_line_checker != end_buf && *new_line_checker != '\n'; new_line_checker++) {
-//            line_size++;
-//        }
-//        if (new_line_checker < end_buf) {
-//            new_line_checker++;
-//            lines_on_screen++;
-//        }
-//        write(1, buf + curr_pos_in_buf, new_line_checker - (buf + curr_pos_in_buf));
-//        curr_pos_in_buf +=
+    if (!buffer->empty && buffer->lines_on_screen < MAX_ALLOWED_LINES_ON_SCREEN && FD_ISSET(1, write_fs)) {
+
     }
     return 0;
 }
 
 int
-listen_socket(int sock, fd_set *read_fs) {
-    if (!socket_end && buf_empty && FD_ISSET(sock, read_fs)) {
-        printf("*\n");
-//        simbols_in_buf = read(sock, buf, sizeof(buf));//read handler
-//        if (simbols_in_buf == 0) {
-//            socket_end = 1;
-//        }
-//        buf_empty = 0;
+listen_socket(int sock, fd_set *read_fs, struct cyclical_buf *buffer) {
+    if (!buffer->sock_end && !buffer->full && FD_ISSET(sock, read_fs)) {
+
     }
     return 0;
 }
@@ -139,32 +127,36 @@ int
 load_content_from_server(int sock) {
     int ret;
     fd_set read_fs, write_fs;
+    struct cyclical_buf buffer_struct = CYCLICAL_BUF_INITIALIZER;
+    struct cyclical_buf *buffer = &buffer_struct;
+
     while (1) {
-        if ((ret = update_select(sock, &read_fs, &write_fs)) < 0) {
+        if ((ret = update_select(sock, &read_fs, &write_fs, buffer)) < 0) {
             fprintf(stderr, "Error: select() failed with %s\n", strerror(errno));
             return -1;
         } else if (ret == 0) continue;
-        char buf[4096 * 10];
-          if (listen_stdin(&read_fs) != 0) {
+//        char buf[4096 * 10];
+          if (listen_stdin(&read_fs, buffer) != 0) {
               fprintf(stderr, "Error: listening stdin is failed\n");
               return -1;
           }
-        if (listen_stdout(&write_fs) != 0) {
+        if (listen_stdout(&write_fs, buffer) != 0) {
             fprintf(stderr, "Error: listening stdout is failed\n");
             return -1;
         }
-        if (listen_socket(sock, &read_fs) != 0) {
+        if (listen_socket(sock, &read_fs, buffer) != 0) {
             fprintf(stderr, "Error: listening socket is failed\n");
             return -1;
         }
 
-        if (!buf_full && !socket_end && FD_ISSET(sock, &read_fs)) {
-            read(sock, buf, 4096 * 10);
-            write(1, buf, 4096 * 10);
-            buf_full = 1;
-        }
-        //if ((socket_end || buf_full) && buf_empty) break;
+//        if (!buffer->full && !buffer->sock_end && FD_ISSET(sock, &read_fs)) {
+//            read(sock, buf, 4096 * 10);
+//            write(1, buf, 4096 * 10);
+//            buffer->full = 1;
+//        }
+        if (buffer->sock_end && buffer->empty) break;
     }
+    return 0;
 }
 
 int
@@ -176,7 +168,7 @@ start_http_client(char *host, char *port, char *path) {
         return -1;
     }
     sprintf(get_request, "GET %s HTTP/1.0\r\n\r\n", path);
-    write(sock, get_request, strlen(get_request));
+    write(sock, get_request, strlen(get_request));//handle write
     if (load_content_from_server(sock) == -1) {
         fprintf(stderr, "Error: load_content_from_server() failed\n");
         return -1;
@@ -197,6 +189,5 @@ main(int argc, char **argv) {
     if (start_http_client(host, port, path) != 0) {
         exit(EXIT_FAILURE);
     }
-
     exit(EXIT_SUCCESS);
 }//close socket

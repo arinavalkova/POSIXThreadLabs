@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <errno.h>
 #include <stdio.h>
 #include <netdb.h>
@@ -16,39 +17,45 @@
 #define NEW_LINE '\n'
 #define BUF_SIZE 4096
 #define DEFAULT_PORT "80"
+#define GET_REQUEST_LEN 30
 #define MAX_ALLOWED_LINES_ON_SCREEN 25
-#define CYCLICAL_BUF_INITIALIZER {0, 1, 0, 0, 0, 0}
+#define CYCLICAL_BUF_INITIALIZER {0, 1, 0, 0, 0, 0, (char *) malloc(BUF_SIZE)}
 #define INVITE_TO_PRESS "Press ENTER to scroll down"
 
 struct cyclical_buf {
     int full, empty, sock_end,
             lines_on_screen, up, down;
-    char buf[BUF_SIZE];
+    char *buf;
 };
 
+struct cyclical_buf buffer_struct = CYCLICAL_BUF_INITIALIZER;
+struct cyclical_buf *buffer = &buffer_struct;
+char *host = NULL, *path = NULL, *port = NULL;
+int sock;
+
 int
-url_parse_err_proc(char *url_line, char **port, char **host, char **path) {
+url_parse_err_proc(char *url_line) {
     EdUrlParser *url = EdUrlParser::parseUrl(url_line);
     if (strcmp(url->scheme.c_str(), HTTP)) {
         fprintf(stderr, "Error: protocol is not supported, only http\n");
         return -1;
     }
-    *port = (char *) malloc(strlen(url->port.c_str()));
-    memcpy(*port, url->port.c_str(), strlen(url->port.c_str()));
-    if (strcmp(*port, EMPTY) == 0) {
+    port = (char *) malloc(strlen(url->port.c_str()));
+    memcpy(port, url->port.c_str(), strlen(url->port.c_str()));
+    if (strcmp(port, EMPTY) == 0) {
         fprintf(stderr, "Note: established default port 80\n");
-        *port = (char *) malloc(strlen(DEFAULT_PORT));
-        memcpy(*port, DEFAULT_PORT, strlen(DEFAULT_PORT));
+        port = (char *) malloc(strlen(DEFAULT_PORT));
+        memcpy(port, DEFAULT_PORT, strlen(DEFAULT_PORT));
     }
-    *host = (char *) malloc(strlen(url->hostName.c_str()));
-    memcpy(*host, url->hostName.c_str(), strlen(url->hostName.c_str()));
-    if (strcmp(*host, EMPTY) == 0) {
+    host = (char *) malloc(strlen(url->hostName.c_str()));
+    memcpy(host, url->hostName.c_str(), strlen(url->hostName.c_str()));
+    if (strcmp(host, EMPTY) == 0) {
         fprintf(stderr, "Error: can't parse host name\n");
         return -1;
     }
-    *path = (char *) malloc(strlen(url->path.c_str()));
-    memcpy(*path, url->path.c_str(), strlen(url->path.c_str()));
-    if (strcmp(*path, EMPTY) == 0) {
+    path = (char *) malloc(strlen(url->path.c_str()));
+    memcpy(path, url->path.c_str(), strlen(url->path.c_str()));
+    if (strcmp(path, EMPTY) == 0) {
         fprintf(stderr, "Error: can't parse url path\n");
     }
     delete url;
@@ -56,8 +63,8 @@ url_parse_err_proc(char *url_line, char **port, char **host, char **path) {
 }
 
 int
-connect_to_server(char *host, char *port) {
-    int sock, ret;
+connect_to_server() {
+    int ret;
     struct sockaddr_in server_addr;
     struct addrinfo *ip_struct;
     struct addrinfo hints;
@@ -83,7 +90,7 @@ connect_to_server(char *host, char *port) {
 }
 
 int
-update_select(int sock, fd_set *read_fs, fd_set *write_fs, struct cyclical_buf *buffer) {
+update_select(fd_set *read_fs, fd_set *write_fs) {
     FD_ZERO(read_fs);
     FD_ZERO(write_fs);
     if (!buffer->empty && buffer->lines_on_screen < MAX_ALLOWED_LINES_ON_SCREEN) {
@@ -99,21 +106,20 @@ update_select(int sock, fd_set *read_fs, fd_set *write_fs, struct cyclical_buf *
 }
 
 int
-listen_stdin(fd_set *read_fs, struct cyclical_buf *buffer) {
+listen_stdin(fd_set *read_fs) {
     if (buffer->lines_on_screen >= MAX_ALLOWED_LINES_ON_SCREEN && FD_ISSET(0, read_fs)) {
         char click;
-        read(0, &click, 1);//handle read
+        if (read(0, &click, 1) == -1) {
+            fprintf(stderr, "Error: read() in press Enter is failed with %s\n", strerror(errno));
+            return -1;
+        }
         buffer->lines_on_screen = 0;
     }
     return 0;
 }
 
-//^c handler
-//read 105
-//write 137
-
 int
-listen_stdout(fd_set *write_fs, struct cyclical_buf *buffer) {
+listen_stdout(fd_set *write_fs) {
     int ret;
     if (!buffer->empty && buffer->lines_on_screen < MAX_ALLOWED_LINES_ON_SCREEN && FD_ISSET(1, write_fs)) {
         char *data = buffer->buf + buffer->down;
@@ -134,14 +140,17 @@ listen_stdout(fd_set *write_fs, struct cyclical_buf *buffer) {
         buffer->full = 0;
 
         if (buffer->lines_on_screen >= MAX_ALLOWED_LINES_ON_SCREEN) {
-            write(1, INVITE_TO_PRESS, strlen(INVITE_TO_PRESS));
+            if (write(1, INVITE_TO_PRESS, strlen(INVITE_TO_PRESS)) == -1) {
+                fprintf(stderr, "Error: write() invite to press message failed with %s\n", strerror(errno));
+                return -1;
+            }
         }
     }
     return 0;
 }
 
 int
-listen_socket(int sock, fd_set *read_fs, struct cyclical_buf *buffer) {
+listen_socket(fd_set *read_fs) {
     int ret;
     if (!buffer->sock_end && !buffer->full && FD_ISSET(sock, read_fs)) {
         if (buffer->up >= buffer->down) {
@@ -165,42 +174,35 @@ listen_socket(int sock, fd_set *read_fs, struct cyclical_buf *buffer) {
 }
 
 int
-load_content_from_server(int sock) {
+load_content_from_server() {
     int ret;
     fd_set read_fs, write_fs;
-    struct cyclical_buf buffer_struct = CYCLICAL_BUF_INITIALIZER;
-    struct cyclical_buf *buffer = &buffer_struct;
-
     while (1) {
-        if ((ret = update_select(sock, &read_fs, &write_fs, buffer)) < 0) {
+        if ((ret = update_select(&read_fs, &write_fs)) < 0) {
             fprintf(stderr, "Error: select() failed with %s\n", strerror(errno));
             return -1;
         } else if (ret == 0) continue;
-        if (listen_stdin(&read_fs, buffer) != 0) {
+        if (listen_stdin(&read_fs) != 0) {
             fprintf(stderr, "Error: listening stdin is failed\n");
             return -1;
         }
-        if (listen_stdout(&write_fs, buffer) != 0) {
+        if (listen_stdout(&write_fs) != 0) {
             fprintf(stderr, "Error: listening stdout is failed\n");
             return -1;
         }
-        if (listen_socket(sock, &read_fs, buffer) != 0) {
+        if (listen_socket(&read_fs) != 0) {
             fprintf(stderr, "Error: listening socket is failed\n");
             return -1;
         }
-        if (buffer->sock_end && buffer->empty) {
-            close(sock);
-            break;
-        }
+        if (buffer->sock_end && buffer->empty) { break;}
     }
     return 0;
 }
 
 int
-start_http_client(char *host, char *port, char *path) {
-    char get_request[BUF_SIZE];
-    int sock, ret = 0;
-    if ((sock = connect_to_server(host, port)) == -1) {
+start_http_client() {
+    char *get_request = (char *) malloc(strlen(path) + GET_REQUEST_LEN);
+    if ((sock = connect_to_server()) == -1) {
         fprintf(stderr, "Error: can't connect to server\n");
         return -1;
     }
@@ -209,25 +211,47 @@ start_http_client(char *host, char *port, char *path) {
         fprintf(stderr, "Error: write() GET request to socket failed with %s\n", strerror(errno));
         return -1;
     }
-    if (load_content_from_server(sock) == -1) {
+    free(get_request);
+    if (load_content_from_server() == -1) {
         fprintf(stderr, "Error: load_content_from_server() failed\n");
         return -1;
     }
     return 0;
 }
+void
+freeing_resources() {
+    free(host);
+    free(path);
+    free(port);
+    close(sock);
+    free(buffer->buf);
+}
+
+void
+sigint_handler(int signum){ freeing_resources(); }
+
+void
+init_sigint_handler() {
+    struct sigaction new_action;
+    new_action.sa_handler = sigint_handler;
+    sigemptyset(&new_action.sa_mask);
+    new_action.sa_flags = 0;
+    sigaction(SIGINT, &new_action, NULL);
+}
 
 int
 main(int argc, char **argv) {
-    char *host = NULL, *path = NULL, *port = NULL;
     if (argc < 2) {
         fprintf(stderr, "Usage: %s url\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-    if (url_parse_err_proc(argv[1], &port, &host, &path) != 0) {
+    init_sigint_handler();
+    if (url_parse_err_proc(argv[1]) != 0) {
         exit(EXIT_FAILURE);
     }
-    if (start_http_client(host, port, path) != 0) {
+    if (start_http_client() != 0) {
         exit(EXIT_FAILURE);
     }
+    freeing_resources();
     exit(EXIT_SUCCESS);
 }

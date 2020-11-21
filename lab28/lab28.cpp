@@ -101,6 +101,28 @@ threads_cancel() {
     pthread_cancel(socket_data_reader_pth);
 }
 
+void
+freeing_resources() {
+    int ret;
+    free(host);
+    free(path);
+    free(port);
+    close(sock);
+    if ((ret = pthread_mutex_destroy(&buffer->mutex)) != 0) {
+        fprintf(stderr, "Error: pthread_mutex_destroy() failed with %s\n", strerror(ret));
+    }
+    if ((ret = pthread_cond_destroy(&buffer->cond)) != 0) {
+        fprintf(stderr, "Error: pthread_cond_destroy() failed with %s\n", strerror(ret));
+    }
+    free(buffer->buf);
+}
+
+void
+cancel_and_free_all() {
+    threads_cancel();
+    freeing_resources();
+}
+
 void *socket_data_reader(void *parameters) {
     int ret;
     pthread_mutex_lock(&buffer->mutex);
@@ -119,7 +141,7 @@ void *socket_data_reader(void *parameters) {
         if (ret == -1) {
             fprintf(stderr, "Error: read() from socket failed\n");
             pthread_mutex_unlock(&buffer->mutex);
-            threads_cancel();
+            cancel_and_free_all();
         } else if (ret == 0) {
             buffer->sock_end = 1;
         } else {
@@ -165,7 +187,7 @@ void *user_interaction(void *parameters) {
         if ((ret = write(1, buffer->buf + buffer->down,
                          data - buffer->buf - buffer->down)) == -1) {
             fprintf(stderr, "Error: write() page to screen failed\n");
-            threads_cancel();
+            cancel_and_free_all();
         }
         pthread_mutex_lock(&buffer->mutex);
         buffer->down += ret;
@@ -178,11 +200,11 @@ void *user_interaction(void *parameters) {
             pthread_mutex_unlock(&buffer->mutex);
             if (write(1, INVITE_TO_PRESS, strlen(INVITE_TO_PRESS)) == -1) {
                 fprintf(stderr, "Error: write() invite to press message failed\n");
-                threads_cancel();
+                cancel_and_free_all();
             }
             if (write(1, BACK, strlen(BACK)) == -1) {
                 fprintf(stderr, "Error: write() back failed\n");
-                threads_cancel();
+                cancel_and_free_all();
             }
             pthread_mutex_lock(&buffer->mutex);
         }
@@ -233,26 +255,7 @@ start_http_client() {
 }
 
 void
-freeing_resources() {
-    int ret;
-    free(host);
-    free(path);
-    free(port);
-    close(sock);
-    if ((ret = pthread_mutex_destroy(&buffer->mutex)) != 0) {
-        fprintf(stderr, "Error: pthread_mutex_destroy() failed with %s\n", strerror(ret));
-    }
-    if ((ret = pthread_cond_destroy(&buffer->cond)) != 0) {
-        fprintf(stderr, "Error: pthread_cond_destroy() failed with %s\n", strerror(ret));
-    }
-    free(buffer->buf);
-}
-
-void
-sigint_handler(int signum) {
-    threads_cancel();
-    freeing_resources();
-}
+sigint_handler(int signum) { cancel_and_free_all(); }
 
 void
 init_sigint_handler() {

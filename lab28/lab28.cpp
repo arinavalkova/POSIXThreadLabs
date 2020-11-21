@@ -20,7 +20,7 @@
 #define BUF_SIZE 4096
 #define DEFAULT_PORT "80"
 #define GET_REQUEST_LEN 30
-#define MAX_ALLOWED_LINES_ON_SCREEN 25
+#define MAX_ALLOWED_LINES_ON_SCREEN 50
 #define INVITE_TO_PRESS "Press SPACE to scroll down"
 #define BACK "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
 #define CYCLICAL_BUF_INITIALIZER { 0, 1, 0, 0, 0, 0, PTHREAD_MUTEX_INITIALIZER, \
@@ -105,7 +105,9 @@ void *socket_data_reader(void *parameters) {
     int ret;
     pthread_mutex_lock(&buffer->mutex);
     while (!buffer->sock_end) {
-        while (buffer->full) pthread_cond_wait(&buffer->cond, &buffer->mutex);
+        while (buffer->full) {
+            pthread_cond_wait(&buffer->cond, &buffer->mutex);
+        }
         if (buffer->up >= buffer->down) {
             pthread_mutex_unlock(&buffer->mutex);
             ret = read(sock, buffer->buf + buffer->up, BUF_SIZE - buffer->up);
@@ -122,8 +124,8 @@ void *socket_data_reader(void *parameters) {
             buffer->sock_end = 1;
         } else {
             buffer->up += ret;
-            if (buffer->up == buffer->down) buffer->full = 1;
             if (buffer->up >= buffer->down && buffer->up == BUF_SIZE) buffer->up = 0;
+            if (buffer->up == buffer->down) buffer->full = 1;
             buffer->empty = 0;
         }
         pthread_cond_signal(&buffer->cond);
@@ -135,7 +137,9 @@ int
 listen_stdin() {
     if (buffer->lines_on_screen >= MAX_ALLOWED_LINES_ON_SCREEN) {
         pthread_mutex_unlock(&buffer->mutex);
+        system("stty raw -echo");
         char click = getchar();
+        system("stty cooked echo");
         pthread_mutex_lock(&buffer->mutex);
         if (click != SPACE) return 1;
         buffer->lines_on_screen = 0;
@@ -146,10 +150,10 @@ listen_stdin() {
 void *user_interaction(void *parameters) {
     int ret;
     pthread_mutex_lock(&buffer->mutex);
-    while (!buffer->empty && !buffer->sock_end) {
+    while (1) {
+        if (buffer->empty && buffer->sock_end) break;
         while (buffer->empty && !buffer->sock_end) pthread_cond_wait(&buffer->cond, &buffer->mutex);
         if (listen_stdin() == 1) continue;
-
         char *data = buffer->buf + buffer->down;
         char *end_of_data = (buffer->down < buffer->up) ? buffer->buf + buffer->up : buffer->buf + BUF_SIZE;
         while (data < end_of_data && *data != NEW_LINE) data++;
@@ -169,8 +173,6 @@ void *user_interaction(void *parameters) {
         if (buffer->down == buffer->up) buffer->empty = 1;
         buffer->full = 0;
         pthread_cond_signal(&buffer->cond);
-
-        //stdin handler
 
         if (buffer->lines_on_screen >= MAX_ALLOWED_LINES_ON_SCREEN) {
             pthread_mutex_unlock(&buffer->mutex);
@@ -244,7 +246,6 @@ freeing_resources() {
         fprintf(stderr, "Error: pthread_cond_destroy() failed with %s\n", strerror(ret));
     }
     free(buffer->buf);
-    system("stty echo");
 }
 
 void

@@ -1,8 +1,7 @@
+#include "../getRequest.h"
 #include <sys/socket.h>
-#include "getRequest.h"
 #include <sys/types.h>
 #include <sys/time.h>
-#include <pthread.h>
 #include <iostream>
 #include <unistd.h>
 #include <string.h>
@@ -11,48 +10,51 @@
 #include <errno.h>
 #include <stdio.h>
 #include <netdb.h>
+#include <termios.h>
 #include <fcntl.h>
 #include <aio.h>
+#include "../common/queuebuffer.h"
 
-#define SPACE 32
 #define READ_SOCK 0
 #define READ_STDIN 2
-#define NEW_LINE '\n'
-#define BUF_SIZE 4096
 #define WRITE_STDOUT 1
 #define RW_HANDLERS_COUNT 3
+
+#define SPACE 32
+#define NEW_LINE '\n'
+#define BUF_SIZE 4096
 #define MAX_ALLOWED_LINES_ON_SCREEN 25
-#define INVITE_TO_PRESS "Press SPACE to scroll down"
-#define BACK "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
-#define CYCLICAL_BUF_INITIALIZER {0, 1, 0, 0, 0, 0, (char *) malloc(BUF_SIZE)}
+#define INVITE_TO_PRESS "Press SPACE to scroll down\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
+#define INVITE_LEN 52
 
-struct cyclical_buf {
-    int full, empty, sock_end,
-            lines_on_screen, up, down;
-    char *buf;
-};
 
-struct cyclical_buf buffer_struct = CYCLICAL_BUF_INITIALIZER;
-struct aiocb *rw_in_progress[3]={ NULL, NULL, NULL};
+struct queuebuffer queuebuffer = QUEUE_BUFFER_INITIALIZER;
+int lines_on_screen = 0;
+
+struct aiocb *rw_in_progress[3] = {NULL, NULL, NULL};
 struct aiocb socket_read_struct, stdout_write_struct, stdin_read_struct;
-struct cyclical_buf *buffer = &buffer_struct;
+struct termios tty, savtty;
 int sock;
+char click;
+
+char socket_buffer[BUF_SIZE];
+char *stdout_buffer;
+int stdout_len;
 
 void
 freeing_resources() {
     close(sock);
-    free(buffer->buf);
-    system("stty cooked echo");
+    queuebuffer_clear(&queuebuffer);
 }
 
 void cancel_all_rw() {
-    if (aio_cancel(0, stdin_read_struct) == -1) {
+    if (aio_cancel(0, &stdin_read_struct) == -1) {
         fprintf(stderr, "Error: aio_cancel() stdin read struct failed with %s\n", strerror(errno));
     }
-    if (aio_cancel(1, stdout_write_struct) == -1) {
+    if (aio_cancel(1, &stdout_write_struct) == -1) {
         fprintf(stderr, "Error: aio_cancel() stdout write struct failed with %s\n", strerror(errno));
     }
-    if(aio_cancel(sock, socket_read_struct) == -1) {
+    if (aio_cancel(sock, &socket_read_struct) == -1) {
         fprintf(stderr, "Error: aio_cancel() socket read struct failed with %s\n", strerror(errno));
     }
 }
@@ -73,7 +75,8 @@ init_sigint_handler() {
 }
 
 int stdin_read() {
-    if (buffer->lines_on_screen >= MAX_ALLOWED_LINES_ON_SCREEN && aio_error(&stdin_read_struct) != EINPROGRESS) {
+    if (lines_on_screen >= MAX_ALLOWED_LINES_ON_SCREEN && aio_error(&stdin_read_struct) != EINPROGRESS) {
+        tcsetattr(0, TCSAFLUSH, &tty);
         stdin_read_struct.aio_nbytes = 1;
         if (aio_read(&stdin_read_struct) == -1) {
             fprintf(stderr, "Error: aio_read() from stdin failed with %s\n", strerror(errno));
@@ -85,18 +88,16 @@ int stdin_read() {
 }
 
 int stdout_write() {
-    int ret;
-    if (!buffer->empty && buffer->lines_on_screen < MAX_ALLOWED_LINES_ON_SCREEN
-                       && aio_error(&stdout_write_struct) != EINPROGRESS) {
-        char *data = buffer->buf + buffer->down;
-        char *end_of_data = (buffer->down < buffer->up) ? buffer->buf + buffer->up : buffer->buf + BUF_SIZE;
-        while (data < end_of_data && *data != NEW_LINE) data++;
-        if (data < end_of_data) {
-            data++;
-            buffer->lines_on_screen++;
+    int ret, stdout_i;
+    if (!queuebuffer_is_empty(&queuebuffer) && lines_on_screen < MAX_ALLOWED_LINES_ON_SCREEN
+        && aio_error(&stdout_write_struct) != EINPROGRESS) {
+        stdout_i = 0;
+        queuebuffer_get_bytes(&queuebuffer, &stdout_buffer, &stdout_len);
+        while (stdout_i + 1 < stdout_len && stdout_buffer[stdout_i] != NEW_LINE) {
+            stdout_i++;
         }
-        stdout_write_struct.aio_buf = buffer->buf + buffer->down;
-        stdout_write_struct.aio_nbytes = data - buffer->buf - buffer->down;
+        stdout_write_struct.aio_buf = stdout_buffer;
+        stdout_write_struct.aio_nbytes = stdout_i + 1;
         if (aio_write(&stdout_write_struct) == -1) {
             fprintf(stderr, "Error: aio_write() to stdout failed with %s\n", strerror(errno));
             return -1;
@@ -108,15 +109,12 @@ int stdout_write() {
 
 int socket_read() {
     int ret;
-    if (!buffer->sock_end && !buffer->full && aio_error(&socket_read_struct) != EINPROGRESS) {
-        socket_read_struct.aio_buf = buffer->buf + buffer->up;
-        if (buffer->up >= buffer->down) {
-            socket_read_struct.aio_nbytes = BUF_SIZE - buffer->up;
-        } else {
-            socket_read_struct.aio_nbytes = buffer->down - buffer->up;
-        }
+    if (!queuebuffer.finished && aio_error(&socket_read_struct) != EINPROGRESS) {
+        socket_read_struct.aio_buf = socket_buffer;
+        socket_read_struct.aio_nbytes = BUF_SIZE;
+
         if (aio_read(&socket_read_struct) == -1) {
-            fprintf(stderr, "Error: aio_read from socket failed with %s\n", strerror(errno));
+            fprintf(stderr, "Error: aio_read() from socket failed with %s\n", strerror(errno));
             return -1;
         }
         rw_in_progress[READ_SOCK] = &socket_read_struct;
@@ -125,66 +123,62 @@ int socket_read() {
 }
 
 int check_stdin_read() {
-    int ret, click;
+    int ret;
     if (stdin_read_struct.aio_nbytes != 0 && aio_error(&stdin_read_struct) != EINPROGRESS) {
-        if ((ret = aio_error(&stdin_read_struct)) != 0) {
-            fprintf(stderr, "Error: aio_error() when checking stdin read failed with %s\n", strerror(ret));
+        if (aio_return(&stdin_read_struct) != stdin_read_struct.aio_nbytes) {
+            fprintf(stderr, "Error: aio_return() when checking stdin read failed\n");
             return -1;
         }
-        click = aio_return(&socket_read_struct);
         stdin_read_struct.aio_nbytes = 0;
         if (click != SPACE) return 0;
 
-        buffer->lines_on_screen = 0;
+        lines_on_screen = 0;
+        rw_in_progress[READ_STDIN] = NULL;
+        tcsetattr(0, TCSANOW, &savtty);
     }
     return 0;
 }
 
 int check_stdout_write() {
-    int ret;
+    int len, res, ret;
     if (stdout_write_struct.aio_nbytes != 0 && aio_error(&stdout_write_struct) != EINPROGRESS) {
-        if ((ret = aio_error(&stdout_write_struct)) != 0) {
-            fprintf(stderr, "Error: aio_error() in checking stdout write failed with %s\n", strerror(ret));
+        if ((res = aio_return(&stdout_write_struct)) == -1) {
+            fprintf(stderr, "Error: aio_return() in check socket read failed with %s\n", strerror(errno));
             return -1;
         }
-        ret = aio_return(&stdout_write_struct);
-        buffer->down += ret;
-        if (buffer->down == BUF_SIZE) buffer->down = 0;
-        if (buffer->down == buffer->up) buffer->empty = 1;
-        buffer->full = 0;
+        queuebuffer_add_handled_bytes(&queuebuffer, res);
+        if (res == stdout_write_struct.aio_nbytes &&
+            stdout_buffer[stdout_write_struct.aio_nbytes - 1] == NEW_LINE) {
+            lines_on_screen++;
+        }
 
-        if (buffer->lines_on_screen >= MAX_ALLOWED_LINES_ON_SCREEN) {
-            if (write(1, INVITE_TO_PRESS, strlen(INVITE_TO_PRESS)) == -1) {
-                fprintf(stderr, "Error: write() invite to press message failed with %s\n", strerror(errno));
-                return -1;
-            }
-            if (write(1, BACK, strlen(BACK)) == -1) {
-                fprintf(stderr, "Error: write() back failed with %s\n", strerror(errno));
+        if (lines_on_screen == MAX_ALLOWED_LINES_ON_SCREEN) {
+            ret = write(1, INVITE_TO_PRESS, INVITE_LEN);
+            if (ret < 0) {
+                fprintf(stderr, "Error: write() invite to screen failed with %s\n", strerror(errno));
                 return -1;
             }
         }
         stdout_write_struct.aio_nbytes = 0;
+        rw_in_progress[WRITE_STDOUT] = NULL;
     }
     return 0;
 }
 
 int check_socket_read() {
-    int ret;
+    int res;
     if (socket_read_struct.aio_nbytes != 0 && aio_error(&socket_read_struct) != EINPROGRESS) {
-        if ((ret = aio_error(&socket_read_struct)) != 0) {
-            fprintf(stderr, "Error: aio_error() in check socket read failed with %s\n", strerror(ret));
+        if ((res = aio_return(&socket_read_struct)) == -1) {
+            fprintf(stderr, "Error: aio_return() in check socket read failed with %s\n", strerror(errno));
             return -1;
         }
-        ret = aio_return(&socket_read_struct);
-        if (ret == 0) {
-            buffer->sock_end = 1;
-        } else {
-            buffer->up += ret;
-            if (buffer->up >= buffer->down && buffer->up == BUF_SIZE) buffer->up = 0;
-            if (buffer->up == buffer->down) buffer->full = 1;
-            buffer->empty = 0;
+        if (res == 0) {
+            queuebuffer_finish(&queuebuffer);
+            return 0;
         }
+        queuebuffer_add_bytes(&queuebuffer, socket_buffer, res);
         socket_read_struct.aio_nbytes = 0;
+        rw_in_progress[READ_SOCK] = NULL;
     }
     return 0;
 }
@@ -197,8 +191,8 @@ load_content_from_server() {
     stdout_write_struct.aio_fildes = 1;
     memset(&stdin_read_struct, 0, sizeof stdin_read_struct);
     stdin_read_struct.aio_fildes = 0;
-    stdin_read_struct.aio_buf = click;
-    system("stty raw -echo");
+    stdin_read_struct.aio_buf = &click;
+
     while (1) {
         if (stdin_read() != 0) {
             fprintf(stderr, "Error: stdin_read() failed\n");
@@ -213,7 +207,7 @@ load_content_from_server() {
             return -1;
         }
 
-        aio_suspend((const struct aiocb * const)rw_in_progress, RW_HANDLERS_COUNT, NULL);
+        aio_suspend((const aiocb *const *) rw_in_progress, RW_HANDLERS_COUNT, NULL);
 
         if (check_stdin_read() != 0) {
             fprintf(stderr, "Error: check_stdin_read() failed\n");
@@ -227,7 +221,9 @@ load_content_from_server() {
             fprintf(stderr, "Error: check_socket_read() failed\n");
             return -1;
         }
-        if (buffer->sock_end && buffer->empty) break;
+        if (queuebuffer_is_empty(&queuebuffer) && queuebuffer.finished) {
+            break;
+        }
     }
     return 0;
 }
@@ -243,6 +239,10 @@ main(int argc, char **argv) {
         fprintf(stderr, "Error: GET_Request() failed\n");
         exit(EXIT_FAILURE);
     }
+    tcgetattr(0, &tty);
+    savtty = tty;
+    tty.c_lflag &= ~(ISIG | ICANON | ECHO);
+    tty.c_cc[VMIN] = 1;
     if (load_content_from_server() == -1) {
         fprintf(stderr, "Error: load_content_from_server() failed\n");
         exit(EXIT_FAILURE);

@@ -39,34 +39,37 @@ char click;
 
 char socket_buffer[BUF_SIZE];
 char *stdout_buffer;
-int stdout_len;
+int stdout_len, running = 1;
 
-void
-freeing_resources() {
+void freeing_resources() {
     close(sock);
     queuebuffer_clear(&queuebuffer);
 }
 
+void cancel_rw(struct aiocb *rw_struct) {
+    int ret;
+    if (aio_cancel(0, &stdin_read_struct) == AIO_NOTCANCELED) {
+        while (aio_suspend((const aiocb *const*) rw_struct, 1, NULL) == -1) {
+            fprintf(stderr, "Error: aio_suspend() end work with %s\n", strerror(errno));
+            if (errno == ENOSYS) {
+                break;
+            }
+        }
+    }
+}
+
 void cancel_all_rw() {
-    if (aio_cancel(0, &stdin_read_struct) == -1) {
-        fprintf(stderr, "Error: aio_cancel() stdin read struct failed with %s\n", strerror(errno));
-    }
-    if (aio_cancel(1, &stdout_write_struct) == -1) {
-        fprintf(stderr, "Error: aio_cancel() stdout write struct failed with %s\n", strerror(errno));
-    }
-    if (aio_cancel(sock, &socket_read_struct) == -1) {
-        fprintf(stderr, "Error: aio_cancel() socket read struct failed with %s\n", strerror(errno));
-    }
+    cancel_rw(&stdin_read_struct);
+    cancel_rw(&stdout_write_struct);
+    cancel_rw(&socket_read_struct);
 }
 
-void
-sigint_handler(int signum) {
+void sigint_handler(int signum) {
+    running = 0;
     cancel_all_rw();
-    freeing_resources();
 }
 
-void
-init_sigint_handler() {
+void init_sigint_handler() {
     struct sigaction new_action;
     new_action.sa_handler = sigint_handler;
     sigemptyset(&new_action.sa_mask);
@@ -75,7 +78,7 @@ init_sigint_handler() {
 }
 
 int stdin_read() {
-    if (lines_on_screen >= MAX_ALLOWED_LINES_ON_SCREEN && aio_error(&stdin_read_struct) != EINPROGRESS) {
+    if (lines_on_screen >= MAX_ALLOWED_LINES_ON_SCREEN && aio_error(&stdin_read_struct) == 0) {
         tcsetattr(0, TCSAFLUSH, &tty);
         stdin_read_struct.aio_nbytes = 1;
         if (aio_read(&stdin_read_struct) == -1) {
@@ -90,7 +93,7 @@ int stdin_read() {
 int stdout_write() {
     int ret, stdout_i;
     if (!queuebuffer_is_empty(&queuebuffer) && lines_on_screen < MAX_ALLOWED_LINES_ON_SCREEN
-        && aio_error(&stdout_write_struct) != EINPROGRESS) {
+        && aio_error(&stdout_write_struct) == 0) {
         stdout_i = 0;
         queuebuffer_get_bytes(&queuebuffer, &stdout_buffer, &stdout_len);
         while (stdout_i + 1 < stdout_len && stdout_buffer[stdout_i] != NEW_LINE) {
@@ -109,7 +112,7 @@ int stdout_write() {
 
 int socket_read() {
     int ret;
-    if (!queuebuffer.finished && aio_error(&socket_read_struct) != EINPROGRESS) {
+    if (!queuebuffer.finished && aio_error(&socket_read_struct) == 0) {
         socket_read_struct.aio_buf = socket_buffer;
         socket_read_struct.aio_nbytes = BUF_SIZE;
 
@@ -124,7 +127,7 @@ int socket_read() {
 
 int check_stdin_read() {
     int ret;
-    if (stdin_read_struct.aio_nbytes != 0 && aio_error(&stdin_read_struct) != EINPROGRESS) {
+    if (stdin_read_struct.aio_nbytes != 0 && aio_error(&stdin_read_struct) == 0) {
         if (aio_return(&stdin_read_struct) != stdin_read_struct.aio_nbytes) {
             fprintf(stderr, "Error: aio_return() when checking stdin read failed\n");
             return -1;
@@ -141,7 +144,7 @@ int check_stdin_read() {
 
 int check_stdout_write() {
     int len, res, ret;
-    if (stdout_write_struct.aio_nbytes != 0 && aio_error(&stdout_write_struct) != EINPROGRESS) {
+    if (stdout_write_struct.aio_nbytes != 0 && aio_error(&stdout_write_struct) == 0) {
         if ((res = aio_return(&stdout_write_struct)) == -1) {
             fprintf(stderr, "Error: aio_return() in check socket read failed with %s\n", strerror(errno));
             return -1;
@@ -167,7 +170,7 @@ int check_stdout_write() {
 
 int check_socket_read() {
     int res;
-    if (socket_read_struct.aio_nbytes != 0 && aio_error(&socket_read_struct) != EINPROGRESS) {
+    if (socket_read_struct.aio_nbytes != 0 && aio_error(&socket_read_struct) == 0) {
         if ((res = aio_return(&socket_read_struct)) == -1) {
             fprintf(stderr, "Error: aio_return() in check socket read failed with %s\n", strerror(errno));
             return -1;
@@ -193,7 +196,7 @@ load_content_from_server() {
     stdin_read_struct.aio_fildes = 0;
     stdin_read_struct.aio_buf = &click;
 
-    while (1) {
+    while (running) {
         if (stdin_read() != 0) {
             fprintf(stderr, "Error: stdin_read() failed\n");
             return -1;
